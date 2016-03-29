@@ -30,21 +30,26 @@ import com.getvisitapp.android.OkHttp.OkHttpRequests;
 import com.getvisitapp.android.R;
 import com.getvisitapp.android.Utils.SessionManager;
 import com.getvisitapp.android.Visit;
+import com.getvisitapp.android.pojo.MessageData;
 import com.getvisitapp.android.services.StartConsultationChatReceiver;
-import com.google.android.gms.analytics.HitBuilders;
 import com.google.android.gms.analytics.Tracker;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.io.ByteArrayOutputStream;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class HistoryListFragment extends BaseFragment implements RViewClickListener, SwipeRefreshLayout.OnRefreshListener, ConsultationTherapistActivity.StartConsultationTherapist {
 
     public static final String ARG_INITIAL_POSITION = "ARG_INITIAL_POSITION";
 
-    List<List<String>> data;
+    private JSONObject data;
     List<Bitmap> ids;
     boolean noPastRequests = false;
-    int[] msgCount;
     String patientId, doctorId;
     Activity parentActivity;
     private RecyclerView recyclerView;
@@ -58,16 +63,16 @@ public class HistoryListFragment extends BaseFragment implements RViewClickListe
     private boolean isDoctor;
     private Tracker mTracker;
     private AppEventsLogger mLogger;
+    private List<MessageData> messageDataListPatient;
+    private int[] counter ;
 
 
     private static final String TAG = HistoryListFragment.class.getSimpleName();
 
-    public void setVals(boolean isSupport, List<List<String>> d, List<Bitmap> i, boolean b, int[] m, boolean isDoctor) {
+    public void setVals(JSONObject d, List<Bitmap> i, boolean b, boolean isDoctor) {
         data = d;
         ids = i;
-        msgCount = m;
         noPastRequests = b;
-        isSupportEnabled = isSupport;
         this.isDoctor = isDoctor;
     }
 
@@ -76,6 +81,7 @@ public class HistoryListFragment extends BaseFragment implements RViewClickListe
         super.onCreate(savedInstanceState);
         mTracker = ((Visit) getActivity().getApplication()).getDefaultTracker();
         mLogger = AppEventsLogger.newLogger(getActivity());
+        messageDataListPatient = new ArrayList<>();
     }
 
     @Override
@@ -89,14 +95,14 @@ public class HistoryListFragment extends BaseFragment implements RViewClickListe
         patientId = PreferenceManager.getDefaultSharedPreferences(parentActivity.getApplicationContext()).getString("patientId", "");
 
         view = inflater.inflate(R.layout.layout_listview_history, container, false);
-
         mSwipeRefresh = (SwipeRefreshLayout) view.findViewById(R.id.swipe_to_refresh_history);
         mSwipeRefresh.setOnRefreshListener(this);
         mSwipeRefresh.setColorSchemeResources(R.color.primary, R.color.accent);
         mSwipeRefresh.setProgressViewOffset(true, dp2Pix(20), dp2Pix(68));
 
         mAdapter = new History_adapter(getActivity());
-        mAdapter.setHistory(isSupportEnabled, data, ids, msgCount, this, isDoctor);
+        getMessageData(data);
+        mAdapter.setHistory(messageDataListPatient, counter, this, isDoctor);
 
         recyclerView = (RecyclerView) view.findViewById(R.id.scroll);
         recyclerView.setHasFixedSize(true);
@@ -134,6 +140,9 @@ public class HistoryListFragment extends BaseFragment implements RViewClickListe
     @Override
     public void onResume() {
         super.onResume();
+        mAdapter.setHistory(messageDataListPatient, counter, this, isDoctor);
+        recyclerView.setAdapter(mAdapter);
+        recyclerView.setLayoutManager(new LinearLayoutManager(getActivity()));
         AppEventsLogger.activateApp(getActivity());
     }
 
@@ -156,36 +165,42 @@ public class HistoryListFragment extends BaseFragment implements RViewClickListe
 
     @Override
     public void rViewClickListener(int position) {
-
+        Log.d("rView", "rview clicked");
+        MessageData current = messageDataListPatient.get(position);
+        refreshAdapter(position, 0);
+        if (current.getUserType().equals("doctor")) {
+            patientId = current.getPatientId_for_doc_past_req();
+            doctorId = PreferenceManager.getDefaultSharedPreferences(parentActivity.
+                    getApplicationContext()).getString("doctorId", "");
+        } else {
+            patientId = current.getPatienId();
+            doctorId = current.getDocotorId();
+        }
         if (position == 0 && !new SessionManager(getActivity()).isShowConsultationTherapyInfoForFirstTime() && !isDoctor) {
             new SessionManager(getActivity()).setShowConsultationTherapyInfoForFirstTime(true);
-            Log.d("HistoryFrag", data.get(position).get(4));
+            //Log.d("HistoryFrag", data.get(position).get(4));
             pos_for_consultation_chat = position;
             Intent intent = new Intent(getActivity(), ConsultationTherapistActivity.class);
             intent.putExtra("position", position);
             startActivity(intent);
         } else {
             Log.d("click", "--> click else :" + position);
-            if (isAdded() && data.size() > 0) {
+            if (isAdded() && messageDataListPatient.size() > 0) {
                 Bitmap image1 = null, image2 = null;
                 if (ids.size() > position)
                     image2 = ids.get(position);
-                String name = data.get(position).get(0);
-                if (position == 0){
+//                String name = current.getName();
+                if (position == 0) {
                     mLogger.logEvent("FreeChatStarted");
                 }
                 Intent i = new Intent(parentActivity, ChatActivity.class);
-                doctorId = data.get(position).get(3);
+//                doctorId = current.getUserId();
                 if (patientId.isEmpty()) {
-                    doctorId = PreferenceManager.getDefaultSharedPreferences(parentActivity.
+                    /*doctorId = PreferenceManager.getDefaultSharedPreferences(parentActivity.
                             getApplicationContext()).getString("doctorId", "");
-                    patientId = data.get(position).get(3);
-                    ((DoctorMainActivity) parentActivity).totalMsgCount[1] -= ((DoctorMainActivity) parentActivity).msgCounts[position];
-                    ((DoctorMainActivity) parentActivity).msgCounts[position] = 0;
+                    patientId = current.getUserId();*/
                     image1 = DoctorMainActivity.profile_image;
                 } else {
-                    ((PatientMainActivity) parentActivity).totalMsgCount[1] -= ((PatientMainActivity) parentActivity).msgCounts[position];
-                    ((PatientMainActivity) parentActivity).msgCounts[position] = 0;
                     image1 = PatientMainActivity.profile_image;
                 }
                 if (image1 != null) {
@@ -198,11 +213,11 @@ public class HistoryListFragment extends BaseFragment implements RViewClickListe
                     image2.compress(Bitmap.CompressFormat.JPEG, 80, stream);
                     i.putExtra("image2", stream.toByteArray());
                 }
-                i.putExtra("daysRemaining", data.get(position).get(4));
+                i.putExtra("daysRemaining", current.getDaysLeft());
                 i.putExtra("patientId", patientId);
                 i.putExtra("doctorId", doctorId);
-                i.putExtra("name", name);
-                i.putExtra("supportChannelName", ((MainActivity) parentActivity).supportChatChannelName);
+                i.putExtra("name", current.getName());
+                i.putExtra("supportChannelName", ((MainActivity) parentActivity).supportChatChannelName);  // // TODO: 3/29/2016  jenny channel name and delete it from main activity
                 parentActivity.startActivity(i);
             }
         }
@@ -210,38 +225,41 @@ public class HistoryListFragment extends BaseFragment implements RViewClickListe
 
     @Override
     public void onRefresh() {
-        if (patientId.isEmpty()) {
-            mSwipeRefresh.setRefreshing(true);
-            ((DoctorMainActivity) getActivity()).onHistoryRefresh(mSwipeRefresh);
-        } else {
-            mSwipeRefresh.setRefreshing(false);
-            Log.d("refreshingData", "else condition triggered 2");
 
-        }
     }
 
     @Override
     public void startTheFragment(int position) {
-        if (isAdded() && data.size() > 0) {
+        Log.d("rView", "fragment started");
+        MessageData current = messageDataListPatient.get(position);
+        current.setUnreadMsgCount(0);
+        String name;
+        if (current.getUserType().equals("doctor")) {
+            patientId = current.getPatientId_for_doc_past_req();
+            doctorId = PreferenceManager.getDefaultSharedPreferences(parentActivity.
+                    getApplicationContext()).getString("doctorId", "");
+            name = current.getName();
+        } else {
+            patientId = current.getPatienId();
+            doctorId = current.getDocotorId();
+            name = current.getDoctorFirstName() + " " + current.getDoctorLastName();
+        }
+        if (isAdded() && messageDataListPatient.size() > 0) {
             Log.d("click", "--> click if");
             Bitmap image1 = null, image2 = null;
             if (ids.size() > position)
                 image2 = ids.get(position);
-            String name = data.get(position).get(0);
+
             Intent i = new Intent(parentActivity, ChatActivity.class);
-            doctorId = data.get(position).get(3);
+            //doctorId = current.getDocotorId();
             Log.d("channelName", "doc_id 1:" + doctorId);
             if (patientId.isEmpty()) {
-                doctorId = PreferenceManager.getDefaultSharedPreferences(parentActivity.
+                /*doctorId = PreferenceManager.getDefaultSharedPreferences(parentActivity.
                         getApplicationContext()).getString("doctorId", "");
                 Log.d("channelName", "doc_id 2:" + doctorId);
-                patientId = data.get(position).get(3);
-                ((DoctorMainActivity) parentActivity).totalMsgCount[1] -= ((DoctorMainActivity) parentActivity).msgCounts[position];
-                ((DoctorMainActivity) parentActivity).msgCounts[position] = 0;
+                patientId = current.getPatienId();*/
                 image1 = DoctorMainActivity.profile_image;
             } else {
-                ((PatientMainActivity) parentActivity).totalMsgCount[1] -= ((PatientMainActivity) parentActivity).msgCounts[position];
-                ((PatientMainActivity) parentActivity).msgCounts[position] = 0;
                 Log.d("msgCount", "made null");
                 image1 = PatientMainActivity.profile_image;
             }
@@ -255,7 +273,7 @@ public class HistoryListFragment extends BaseFragment implements RViewClickListe
                 image2.compress(Bitmap.CompressFormat.JPEG, 80, stream);
                 i.putExtra("image2", stream.toByteArray());
             }
-            i.putExtra("daysRemaining", data.get(position).get(4));
+            i.putExtra("daysRemaining", current.getDaysLeft());
             i.putExtra("patientId", patientId);
             i.putExtra("doctorId", doctorId);
             i.putExtra("name", name);
@@ -264,11 +282,31 @@ public class HistoryListFragment extends BaseFragment implements RViewClickListe
 
         }
     }
-//    @Override
-//    public void onResume(){
-//        super.onResume();
-//        Log.i(HistoryListFragment.class.getSimpleName(), "Setting screen name: " + HistoryListFragment.class.getSimpleName());
-//        mTracker.setScreenName(HistoryListFragment.class.getSimpleName());
-//        mTracker.send(new HitBuilders.ScreenViewBuilder().build());
-//    }
+
+    private void getMessageData(JSONObject data) {
+
+        try {
+            String msg = data.getString("message");
+            JSONArray jsonArray = data.getJSONArray("requests");
+            counter = new int[jsonArray.length()];
+            for (int i = 0; i < jsonArray.length(); i++) {
+                JSONObject object = jsonArray.getJSONObject(i);
+                int count = object.getInt("unreadMessagesCount");
+
+                counter[i] = count;
+            }
+            messageDataListPatient.clear();
+            messageDataListPatient.addAll(MessageData.fromJson(jsonArray, msg));
+            mAdapter.notifyDataSetChanged();
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    private void refreshAdapter(int position, int value) {
+        counter[position] = value;
+
+
+    }
 }
