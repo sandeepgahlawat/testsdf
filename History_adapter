@@ -1,0 +1,211 @@
+package com.getvisitapp.android.Adapter;
+
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.support.v7.widget.RecyclerView;
+import android.util.Log;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ImageView;
+import android.widget.RelativeLayout;
+import android.widget.TextView;
+
+import com.getvisitapp.android.CustomClasses.RViewClickListener;
+import com.getvisitapp.android.R;
+import com.getvisitapp.android.config.Server;
+import com.getvisitapp.android.pojo.MessageData;
+import com.squareup.picasso.Picasso;
+
+import java.util.Arrays;
+import java.util.List;
+
+/**
+ * Created by GHOST on 2/24/2016.
+ */
+public class History_adapter extends RecyclerView.Adapter<History_adapter.ViewHolder> {
+
+    private Context context;
+    private RViewClickListener clickListener;
+    private static final int isSupportChat = 1;
+    private static final int normalChat = 0;
+    private static final int header = 2;
+    private int[] view_type;
+    private boolean isSupportChatEnabled;
+    private int data_no;
+    private boolean isDoctor;
+    private List<MessageData> dataList;
+    private int[] counter;
+
+    public History_adapter(Context context) {
+        this.context = context;
+    }
+
+    public void setHistory(List<MessageData> list, int[] id,
+                           RViewClickListener listener, boolean isDoctor) {
+        this.dataList = list;
+        Log.d("cat_data-list", " history data" + String.valueOf(dataList));
+        Log.d("cat_data-list2", " history data size" + dataList.size());
+        this.clickListener = listener;
+        this.isDoctor = isDoctor;
+        this.counter = id;
+        if (isDoctor) {
+            data_no = 1;
+        } else {
+            data_no = 5;
+        }
+        view_type = new int[dataList.size() ];
+        if (dataList.get(0).isSupportChat())
+            view_type[0] = 1;
+        notifyDataSetChanged();
+    }
+
+    public static class ViewHolder extends RecyclerView.ViewHolder {
+        public ViewHolder(View itemView) {
+            super(itemView);
+        }
+    }
+
+    public class SupportChatViewHolder extends ViewHolder {
+        TextView name, details, date, counter;
+        View divider;
+        ImageView pic;
+        RelativeLayout counter_layout;
+
+        public SupportChatViewHolder(View v) {
+            super(v);
+            this.name = (TextView) v.findViewById(R.id.name);
+            this.details = (TextView) v.findViewById(R.id.details);
+            this.date = ((TextView) v.findViewById(R.id.date));
+            this.pic = ((ImageView) v.findViewById(R.id.img));
+            this.counter_layout = (RelativeLayout) v.findViewById(R.id.counter_layout);
+            this.counter = (TextView) v.findViewById(R.id.counter);
+            this.divider = v.findViewById(R.id.divider);
+            /*v.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    clickListener.rViewClickListener(getLayoutPosition());
+
+                }
+            });*/
+        }
+    }
+
+    public class NormalViewHolder extends ViewHolder {
+        TextView name, details, date, counter;
+        ImageView pic;
+        View divider;
+        RelativeLayout counter_layout;
+        RelativeLayout container;
+
+        public NormalViewHolder(View v) {
+            super(v);
+
+            this.name = (TextView) v.findViewById(R.id.name);
+            this.details = (TextView) v.findViewById(R.id.details);
+            this.date = ((TextView) v.findViewById(R.id.date));
+            this.pic = ((ImageView) v.findViewById(R.id.img));
+            this.counter_layout = (RelativeLayout) v.findViewById(R.id.counter_layout);
+            this.counter = (TextView) v.findViewById(R.id.counter);
+            this.divider = v.findViewById(R.id.divider);
+            this.container = (RelativeLayout) v.findViewById(R.id.container_layout);
+            /*v.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    clickListener.rViewClickListener(getLayoutPosition());
+                    notifyDataSetChanged();
+                }
+            });*/
+        }
+    }
+
+    class HeaderViewHolder extends ViewHolder {
+        public HeaderViewHolder(View view) {
+            super(view);
+        }
+    }
+
+    @Override
+    public History_adapter.ViewHolder onCreateViewHolder(ViewGroup viewGroup, int viewType) {
+        View v;
+        if (viewType == normalChat) {
+            v = LayoutInflater.from(viewGroup.getContext())
+                    .inflate(R.layout.account_list_item, viewGroup, false);
+
+            return new NormalViewHolder(v);
+        } /*else if (viewType == header) {
+            v = LayoutInflater.from(viewGroup.getContext())
+                    .inflate(R.layout.padding_2, viewGroup, false);
+            return new HeaderViewHolder(v);
+        }*/ else {
+            v = LayoutInflater.from(viewGroup.getContext())
+                    .inflate(R.layout.support_history_view, viewGroup, false);
+            return new SupportChatViewHolder(v);
+        }
+    }
+
+    @Override
+    public void onBindViewHolder(final History_adapter.ViewHolder holder, final int position) {
+        if (position <= dataList.size() -1) {
+            final MessageData current = dataList.get(position);
+            Log.d("messageCount1", position + "  :" + String.valueOf(current.getName()));
+            if (holder.getItemViewType() == isSupportChat) {
+                SupportChatViewHolder scHolder = (SupportChatViewHolder) holder;
+                scHolder.name.setText(current.getName());
+                scHolder.details.setText(current.getDegree());
+                scHolder.date.setText("");
+                if (current.getUnreadMsgCount() == 0) {
+                    scHolder.counter_layout.setVisibility(View.INVISIBLE);
+                } else {
+                    scHolder.counter_layout.setVisibility(View.VISIBLE);
+                    scHolder.counter.setText(current.getUnreadMsgCount() + "");
+                }
+                if (!isDoctor) {
+                    Picasso.with(context).load(Server.API_URL_DOCTOR_PROFILE_IMAGE + current.getDocotorId() + ".png").into(scHolder.pic);
+                } else {
+                    Picasso.with(context).load(Server.API_URL_PATIENT_PROFILE_IMAGE + current.getPatientId_for_doc_past_req() + ".jpg").into(scHolder.pic);
+                }
+            } else if (holder.getItemViewType() == normalChat) {
+                final NormalViewHolder nHolder = (NormalViewHolder) holder;
+                nHolder.name.setText(current.getName());
+                nHolder.details.setText(current.getDegree());
+                nHolder.date.setText("");
+                if (current.getUnreadMsgCount() == 0) {
+                    nHolder.counter_layout.setVisibility(View.INVISIBLE);
+                } else {
+                    nHolder.counter_layout.setVisibility(View.VISIBLE);
+                    nHolder.counter.setText(current.getUnreadMsgCount()+ "");
+                }
+                nHolder.container.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        clickListener.rViewClickListener(nHolder.getLayoutPosition());
+                        nHolder.counter.setText("0");
+                        current.setUnreadMsgCount(0);
+                        notifyDataSetChanged();
+                    }
+                });
+                if (!isDoctor) {
+                    Picasso.with(context).load(Server.API_URL_DOCTOR_PROFILE_IMAGE + current.getDocotorId() + ".png").into(nHolder.pic);
+                } else {
+                    Picasso.with(context).load(Server.API_URL_PATIENT_PROFILE_IMAGE + current.getPatientId_for_doc_past_req() + ".jpg").into(nHolder.pic);
+                }
+
+            }
+        }
+    }
+
+    @Override
+    public int getItemCount() {
+        if (isSupportChatEnabled)
+            return dataList.size() ;
+        return dataList.size() ;
+    }
+
+    @Override
+    public int getItemViewType(int position) {
+        return view_type[position];
+    }
+
+
+}
