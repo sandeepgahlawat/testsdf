@@ -1,0 +1,14 @@
+package com.getvisitapp.android.CustomClasses;
+
+import android.view.View;
+import android.widget.RelativeLayout;
+
+import com.getvisitapp.android.Adapter.History_adapter;
+
+/**
+ * Created by GHOST on 2/25/2016.
+ */
+public interface RViewClickListener {
+
+    void rViewClickListener(int position);
+}
