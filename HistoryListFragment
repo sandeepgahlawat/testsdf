@@ -1,0 +1,274 @@
+package com.getvisitapp.android.Fragment;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.res.Resources;
+import android.graphics.Bitmap;
+import android.graphics.Typeface;
+import android.os.Bundle;
+import android.preference.PreferenceManager;
+import android.support.v4.widget.SwipeRefreshLayout;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
+import android.util.Log;
+import android.util.TypedValue;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
+
+import com.facebook.appevents.AppEventsLogger;
+import com.getvisitapp.android.Activity.ChatActivity;
+import com.getvisitapp.android.Activity.ConsultationTherapistActivity;
+import com.getvisitapp.android.Activity.DoctorActivities.DoctorMainActivity;
+import com.getvisitapp.android.Activity.MainActivity;
+import com.getvisitapp.android.Activity.PatientActivities.PatientMainActivity;
+import com.getvisitapp.android.Adapter.History_adapter;
+import com.getvisitapp.android.CustomClasses.RViewClickListener;
+import com.getvisitapp.android.OkHttp.OkHttpRequests;
+import com.getvisitapp.android.R;
+import com.getvisitapp.android.Utils.SessionManager;
+import com.getvisitapp.android.Visit;
+import com.getvisitapp.android.services.StartConsultationChatReceiver;
+import com.google.android.gms.analytics.HitBuilders;
+import com.google.android.gms.analytics.Tracker;
+
+import java.io.ByteArrayOutputStream;
+import java.util.List;
+
+public class HistoryListFragment extends BaseFragment implements RViewClickListener, SwipeRefreshLayout.OnRefreshListener, ConsultationTherapistActivity.StartConsultationTherapist {
+
+    public static final String ARG_INITIAL_POSITION = "ARG_INITIAL_POSITION";
+
+    List<List<String>> data;
+    List<Bitmap> ids;
+    boolean noPastRequests = false;
+    int[] msgCount;
+    String patientId, doctorId;
+    Activity parentActivity;
+    private RecyclerView recyclerView;
+    private History_adapter mAdapter;
+    private OkHttpRequests okHttpRequests;
+    private Visit visit;
+    private boolean isSupportEnabled;
+    private SwipeRefreshLayout mSwipeRefresh;
+    private StartConsultationChatReceiver myReceiver;
+    private int pos_for_consultation_chat;
+    private boolean isDoctor;
+    private Tracker mTracker;
+    private AppEventsLogger mLogger;
+
+
+    private static final String TAG = HistoryListFragment.class.getSimpleName();
+
+    public void setVals(boolean isSupport, List<List<String>> d, List<Bitmap> i, boolean b, int[] m, boolean isDoctor) {
+        data = d;
+        ids = i;
+        msgCount = m;
+        noPastRequests = b;
+        isSupportEnabled = isSupport;
+        this.isDoctor = isDoctor;
+    }
+
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        mTracker = ((Visit) getActivity().getApplication()).getDefaultTracker();
+        mLogger = AppEventsLogger.newLogger(getActivity());
+    }
+
+    @Override
+    public View onCreateView(final LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        //Log.d(TAG,"--> data:"+data.toString());
+        View view;
+        visit = ((Visit) getActivity().getApplicationContext());
+        okHttpRequests = visit.okHttpRequests;
+        if (parentActivity == null)
+            parentActivity = getActivity();
+        patientId = PreferenceManager.getDefaultSharedPreferences(parentActivity.getApplicationContext()).getString("patientId", "");
+
+        view = inflater.inflate(R.layout.layout_listview_history, container, false);
+
+        mSwipeRefresh = (SwipeRefreshLayout) view.findViewById(R.id.swipe_to_refresh_history);
+        mSwipeRefresh.setOnRefreshListener(this);
+        mSwipeRefresh.setColorSchemeResources(R.color.primary, R.color.accent);
+        mSwipeRefresh.setProgressViewOffset(true, dp2Pix(20), dp2Pix(68));
+
+        mAdapter = new History_adapter(getActivity());
+        mAdapter.setHistory(isSupportEnabled, data, ids, msgCount, this, isDoctor);
+
+        recyclerView = (RecyclerView) view.findViewById(R.id.scroll);
+        recyclerView.setHasFixedSize(true);
+        recyclerView.setLayoutManager(new LinearLayoutManager(getActivity()));
+        if (!noPastRequests)
+            recyclerView.setAdapter(mAdapter);
+
+
+        try {
+            Typeface font = Typeface.createFromAsset(parentActivity.getApplicationContext().getAssets(), "fonts/proximanova-semibold.ttf");
+            ((Button) view.findViewById(R.id.try_visit_button)).setTypeface(font);
+            view.findViewById(R.id.try_visit_button).setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    try {
+                        PatientMainActivity a = (PatientMainActivity) parentActivity;
+                        a.mPager.setCurrentItem(0, true);
+                    } catch (Exception e) {
+                        DoctorMainActivity a = (DoctorMainActivity) parentActivity;
+                        a.mPager.setCurrentItem(0, true);
+                    }
+                }
+            });
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        IntentFilter filter = new IntentFilter("START_CONSULTATION_CHAT");
+        myReceiver = new StartConsultationChatReceiver(pos_for_consultation_chat, this);
+        getActivity().registerReceiver(myReceiver, filter);
+        return view;
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        AppEventsLogger.activateApp(getActivity());
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        AppEventsLogger.deactivateApp(getActivity());
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        getActivity().unregisterReceiver(myReceiver);
+    }
+
+    private int dp2Pix(float i) {
+        Resources r = getResources();
+        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, i, r.getDisplayMetrics());
+    }
+
+    @Override
+    public void rViewClickListener(int position) {
+
+        if (position == 0 && !new SessionManager(getActivity()).isShowConsultationTherapyInfoForFirstTime() && !isDoctor) {
+            new SessionManager(getActivity()).setShowConsultationTherapyInfoForFirstTime(true);
+            Log.d("HistoryFrag", data.get(position).get(4));
+            pos_for_consultation_chat = position;
+            Intent intent = new Intent(getActivity(), ConsultationTherapistActivity.class);
+            intent.putExtra("position", position);
+            startActivity(intent);
+        } else {
+            Log.d("click", "--> click else :" + position);
+            if (isAdded() && data.size() > 0) {
+                Bitmap image1 = null, image2 = null;
+                if (ids.size() > position)
+                    image2 = ids.get(position);
+                String name = data.get(position).get(0);
+                if (position == 0){
+                    mLogger.logEvent("FreeChatStarted");
+                }
+                Intent i = new Intent(parentActivity, ChatActivity.class);
+                doctorId = data.get(position).get(3);
+                if (patientId.isEmpty()) {
+                    doctorId = PreferenceManager.getDefaultSharedPreferences(parentActivity.
+                            getApplicationContext()).getString("doctorId", "");
+                    patientId = data.get(position).get(3);
+                    ((DoctorMainActivity) parentActivity).totalMsgCount[1] -= ((DoctorMainActivity) parentActivity).msgCounts[position];
+                    ((DoctorMainActivity) parentActivity).msgCounts[position] = 0;
+                    image1 = DoctorMainActivity.profile_image;
+                } else {
+                    ((PatientMainActivity) parentActivity).totalMsgCount[1] -= ((PatientMainActivity) parentActivity).msgCounts[position];
+                    ((PatientMainActivity) parentActivity).msgCounts[position] = 0;
+                    image1 = PatientMainActivity.profile_image;
+                }
+                if (image1 != null) {
+                    ByteArrayOutputStream stream = new ByteArrayOutputStream();
+                    image1.compress(Bitmap.CompressFormat.JPEG, 80, stream);
+                    i.putExtra("image1", stream.toByteArray());
+                }
+                if (image2 != null) {
+                    ByteArrayOutputStream stream = new ByteArrayOutputStream();
+                    image2.compress(Bitmap.CompressFormat.JPEG, 80, stream);
+                    i.putExtra("image2", stream.toByteArray());
+                }
+                i.putExtra("daysRemaining", data.get(position).get(4));
+                i.putExtra("patientId", patientId);
+                i.putExtra("doctorId", doctorId);
+                i.putExtra("name", name);
+                i.putExtra("supportChannelName", ((MainActivity) parentActivity).supportChatChannelName);
+                parentActivity.startActivity(i);
+            }
+        }
+    }
+
+    @Override
+    public void onRefresh() {
+        if (patientId.isEmpty()) {
+            mSwipeRefresh.setRefreshing(true);
+            ((DoctorMainActivity) getActivity()).onHistoryRefresh(mSwipeRefresh);
+        } else {
+            mSwipeRefresh.setRefreshing(false);
+            Log.d("refreshingData", "else condition triggered 2");
+
+        }
+    }
+
+    @Override
+    public void startTheFragment(int position) {
+        if (isAdded() && data.size() > 0) {
+            Log.d("click", "--> click if");
+            Bitmap image1 = null, image2 = null;
+            if (ids.size() > position)
+                image2 = ids.get(position);
+            String name = data.get(position).get(0);
+            Intent i = new Intent(parentActivity, ChatActivity.class);
+            doctorId = data.get(position).get(3);
+            Log.d("channelName", "doc_id 1:" + doctorId);
+            if (patientId.isEmpty()) {
+                doctorId = PreferenceManager.getDefaultSharedPreferences(parentActivity.
+                        getApplicationContext()).getString("doctorId", "");
+                Log.d("channelName", "doc_id 2:" + doctorId);
+                patientId = data.get(position).get(3);
+                ((DoctorMainActivity) parentActivity).totalMsgCount[1] -= ((DoctorMainActivity) parentActivity).msgCounts[position];
+                ((DoctorMainActivity) parentActivity).msgCounts[position] = 0;
+                image1 = DoctorMainActivity.profile_image;
+            } else {
+                ((PatientMainActivity) parentActivity).totalMsgCount[1] -= ((PatientMainActivity) parentActivity).msgCounts[position];
+                ((PatientMainActivity) parentActivity).msgCounts[position] = 0;
+                Log.d("msgCount", "made null");
+                image1 = PatientMainActivity.profile_image;
+            }
+            if (image1 != null) {
+                ByteArrayOutputStream stream = new ByteArrayOutputStream();
+                image1.compress(Bitmap.CompressFormat.JPEG, 80, stream);
+                i.putExtra("image1", stream.toByteArray());
+            }
+            if (image2 != null) {
+                ByteArrayOutputStream stream = new ByteArrayOutputStream();
+                image2.compress(Bitmap.CompressFormat.JPEG, 80, stream);
+                i.putExtra("image2", stream.toByteArray());
+            }
+            i.putExtra("daysRemaining", data.get(position).get(4));
+            i.putExtra("patientId", patientId);
+            i.putExtra("doctorId", doctorId);
+            i.putExtra("name", name);
+            i.putExtra("supportChannelName", ((MainActivity) parentActivity).supportChatChannelName);
+            parentActivity.startActivity(i);
+
+        }
+    }
+//    @Override
+//    public void onResume(){
+//        super.onResume();
+//        Log.i(HistoryListFragment.class.getSimpleName(), "Setting screen name: " + HistoryListFragment.class.getSimpleName());
+//        mTracker.setScreenName(HistoryListFragment.class.getSimpleName());
+//        mTracker.send(new HitBuilders.ScreenViewBuilder().build());
+//    }
+}
