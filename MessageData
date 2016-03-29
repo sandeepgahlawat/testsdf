@@ -1,0 +1,153 @@
+package com.getvisitapp.android.pojo;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Created by Ghost on 3/29/2016.
+ */
+public class MessageData {
+
+    String name,degree,patientId_for_doc_past_req,gender;
+    int unreadMsgCount,daysLeft,charges,appointmentId;
+    String doctorFirstName,doctorLastName,patienId,docotorId;
+    boolean isSupportChat;
+    String userType;
+
+
+    public String getUserType() {
+        return userType;
+    }
+
+    public MessageData(){
+
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public String getDegree() {
+        return degree;
+    }
+
+    public String getPatientId_for_doc_past_req() {
+        return patientId_for_doc_past_req;
+    }
+
+    public String getGender() {
+        return gender;
+    }
+
+    public int getUnreadMsgCount() {
+        return unreadMsgCount;
+    }
+
+    public int getDaysLeft() {
+        return daysLeft;
+    }
+
+    public int getCharges() {
+        return charges;
+    }
+
+    public int getAppointmentId() {
+        return appointmentId;
+    }
+
+    public String getDoctorFirstName() {
+        return doctorFirstName;
+    }
+
+    public String getDoctorLastName() {
+        return doctorLastName;
+    }
+
+    public String getDocotorId() {
+        return docotorId;
+    }
+
+    public String getPatienId() {
+        return patienId;
+    }
+
+
+    public boolean isSupportChat() {
+        return isSupportChat;
+
+    }
+
+    public void setUnreadMsgCount(int unreadMsgCount) {
+        this.unreadMsgCount = unreadMsgCount;
+    }
+
+    public static MessageData fromPatientJson(JSONObject jsonObject) {
+        MessageData messageData = new MessageData();
+        // Deserialize json into object fields
+        try {
+            messageData.userType = "patient";
+            messageData.patienId = jsonObject.getString("patient_id");
+            messageData.docotorId = jsonObject.getString("doctor_id");
+            messageData.name = jsonObject.getString("doctor_first_name")+" "+jsonObject.getString("doctor_last_name");
+            messageData.degree = jsonObject.getString("degrees");
+            messageData.daysLeft = jsonObject.getInt("daysRemaining");
+            messageData.isSupportChat = jsonObject.getBoolean("isSupportchat");
+            messageData.unreadMsgCount = jsonObject.getInt("unreadMessagesCount");
+        } catch (JSONException e) {
+            e.printStackTrace();
+            return null;
+        }
+
+        return messageData;
+    }
+
+    public static MessageData fromDoctorJson(JSONObject jsonObject) {
+        MessageData messageData = new MessageData();
+        // Deserialize json into object fields
+        try {
+            messageData.userType = "doctor";
+            messageData.patientId_for_doc_past_req = jsonObject.getString("patient_id");
+            messageData.gender = jsonObject.getString("patient_name");
+            messageData.name = jsonObject.getString("patient_name");
+            messageData.daysLeft = jsonObject.getInt("daysRemaining");
+            messageData.unreadMsgCount = jsonObject.getInt("unreadMessagesCount");
+            messageData.charges = jsonObject.getInt("charges");
+        } catch (JSONException e) {
+            e.printStackTrace();
+            return null;
+        }
+
+        return messageData;
+    }
+    public static ArrayList<MessageData> fromJson(JSONArray jsonArray,String msg) {
+        ArrayList<MessageData> msgData = new ArrayList<MessageData>(jsonArray.length());
+
+        for (int i = 0; i < jsonArray.length(); i++) {
+            JSONObject searchResult = null;
+            try {
+                searchResult = jsonArray.getJSONObject(i);
+            } catch (Exception e) {
+                e.printStackTrace();
+                continue;
+            }
+            if (msg.equals("requestsFound")){
+                MessageData messageData = MessageData.fromPatientJson(searchResult);
+                if (messageData != null) {
+                    msgData.add(messageData);
+                }
+            }else if (msg.equals("appointmentsFound")){
+                MessageData messageData = MessageData.fromDoctorJson(searchResult);
+                if (messageData != null) {
+                    msgData.add(messageData);
+                }
+            }
+
+        }
+
+        return msgData;
+    }
+}
